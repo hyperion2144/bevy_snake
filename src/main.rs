@@ -1,4 +1,4 @@
-use bevy::{prelude::*, sprite::collide_aabb::collide, utils::HashMap};
+use bevy::{prelude::*, sprite::collide_aabb::collide, utils::HashSet};
 use rand::Rng;
 
 const WALL_THICKNESS: f32 = 10.0;
@@ -42,8 +42,8 @@ fn main() {
         .insert_resource(Scoreboard { score: 0 })
         .insert_resource(GameLevel::Simple)
         .insert_resource(SnakeBody {
-            body: HashMap::new(),
-            entities: Vec::new(),
+            table: HashSet::new(),
+            entities: vec![],
         })
         .insert_resource(SnakeTailPosition {
             position: Vec3::ZERO,
@@ -201,7 +201,7 @@ enum GameLevel {
 
 #[derive(Resource)]
 struct SnakeBody {
-    body: HashMap<(i32, i32), bool>,
+    table: HashSet<(usize, usize)>,
     entities: Vec<Entity>,
 }
 
@@ -342,8 +342,14 @@ fn setup_game(
 ) {
     // reset resource data.
     scoreboard.score = 0;
-    snake_body.body.clear();
+    snake_body.table.clear();
     snake_body.entities.clear();
+
+    for x in 0..GRID_WIDTH as usize - 1 {
+        for y in 0..GRID_HEIGHT as usize - 1 {
+            snake_body.table.insert((x, y));
+        }
+    }
 
     // Snake
     let head_position = get_grid_position(1, 0);
@@ -367,8 +373,8 @@ fn setup_game(
         .id();
     let tail = spawn_snake_body(&mut commands, tail_position);
 
-    snake_body.body.insert((1, 0), true);
-    snake_body.body.insert((0, 0), true);
+    snake_body.table.remove(&(0, 0));
+    snake_body.table.remove(&(1, 0));
     snake_body.entities.push(head);
     snake_body.entities.push(tail);
 
@@ -420,9 +426,7 @@ fn movement(
 
     let mut new_part_position = head_transform.translation + *actual_velocity * GRID_SIZE;
 
-    snake_body
-        .body
-        .insert(get_grid_number(new_part_position), true);
+    snake_body.table.remove(&get_grid_number(new_part_position));
 
     // Update snake body part position.
     for entity in snake_body.entities.iter() {
@@ -435,38 +439,34 @@ fn movement(
         }
     }
 
-    snake_body
-        .body
-        .insert(get_grid_number(new_part_position), false);
+    snake_body.table.insert(get_grid_number(new_part_position));
 
     // println!("snake body part: {:?}", snake_body.body);
 }
 
 fn generate_foot(mut commands: Commands, snake_body: Res<SnakeBody>, query: Query<&Foot>) {
-    if snake_body.entities.len() as f32 == GRID_WIDTH * GRID_HEIGHT {
+    if snake_body.table.len() == 0 {
         return;
     }
     // if there is no foot in the game, then generate one.
     if query.is_empty() {
         let mut rng = rand::thread_rng();
-        let mut grid_position = (
-            rng.gen_range(0..GRID_WIDTH as i32),
-            rng.gen_range(0..GRID_HEIGHT as i32),
-        );
-        while snake_body.body.get(&grid_position).is_some_and(|t| *t) {
-            grid_position = (
-                rng.gen_range(0..GRID_WIDTH as i32),
-                rng.gen_range(0..GRID_HEIGHT as i32),
-            );
+
+        let mut random_position = Vec3::ZERO;
+        let random_number = rng.gen_range(0..snake_body.table.len() - 1);
+
+        let mut count = 0;
+        for (x, y) in snake_body.table.iter() {
+            if count == random_number {
+                random_position = get_grid_position(*x, *y);
+            }
+            count += 1;
         }
 
         commands
             .spawn(SpriteBundle {
                 transform: Transform {
-                    translation: get_grid_position(
-                        rng.gen_range(0..GRID_WIDTH as i32),
-                        rng.gen_range(0..GRID_HEIGHT as i32),
-                    ),
+                    translation: random_position,
                     scale: SNAKE_BODY_SIZE,
                     ..default()
                 },
@@ -497,7 +497,7 @@ fn update_velocity(
         GameLevel::Regular => base_velocity = 20.,
         GameLevel::Hard => base_velocity = 200.,
     }
-    let period = (scoreboard.score as f32 + base_velocity).log(600.);
+    let period = (scoreboard.score as f32 + base_velocity).log(1000.);
     *fixed_time = FixedTime::new_from_secs(1. - period);
 }
 
@@ -511,8 +511,8 @@ fn growth(
         let new_snake_tail_entity = spawn_snake_body(&mut commands, snake_tail_position.position);
 
         snake_body
-            .body
-            .insert(get_grid_number(snake_tail_position.position), true);
+            .table
+            .remove(&get_grid_number(snake_tail_position.position));
         snake_body.entities.push(new_snake_tail_entity);
     }
 }
@@ -592,7 +592,7 @@ fn spawn_snake_body(commands: &mut Commands, position: Vec3) -> Entity {
     entity
 }
 
-fn get_grid_position(x: i32, y: i32) -> Vec3 {
+fn get_grid_position(x: usize, y: usize) -> Vec3 {
     Vec3::new(
         LEFT_WALL + (x as f32 + 0.5) * GRID_SIZE.x + WALL_THICKNESS / 2.,
         TOP_WALL - (y as f32 + 0.5) * GRID_SIZE.y - WALL_THICKNESS / 2.,
@@ -600,9 +600,9 @@ fn get_grid_position(x: i32, y: i32) -> Vec3 {
     )
 }
 
-fn get_grid_number(position: Vec3) -> (i32, i32) {
+fn get_grid_number(position: Vec3) -> (usize, usize) {
     (
-        ((position.x - LEFT_WALL - WALL_THICKNESS / 2.) / GRID_SIZE.x - 0.5) as i32,
-        ((TOP_WALL - position.y - WALL_THICKNESS / 2.) / GRID_SIZE.y - 0.5) as i32,
+        ((position.x - LEFT_WALL - WALL_THICKNESS / 2.) / GRID_SIZE.x - 0.5) as usize,
+        ((TOP_WALL - position.y - WALL_THICKNESS / 2.) / GRID_SIZE.y - 0.5) as usize,
     )
 }
