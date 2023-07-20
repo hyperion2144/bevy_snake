@@ -33,7 +33,6 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Snake".into(),
-                resizable: true,
                 ..default()
             }),
             ..default()
@@ -59,7 +58,11 @@ fn main() {
         .add_systems(OnExit(GameState::Menu), cleanup_menu)
         .add_systems(
             OnEnter(GameState::InGame),
-            (setup_game, generate_foot.after(setup_game)),
+            (
+                setup_game,
+                generate_foot.after(setup_game),
+                update_velocity.after(setup_game),
+            ),
         )
         .add_systems(
             FixedUpdate,
@@ -417,6 +420,7 @@ fn movement(
 ) {
     // Caculate snake new position.
     let velocity = snake_head.single_mut();
+
     let head_entity = snake_body.entities[0];
     let head_transform = snae_body_parts.get_mut(head_entity).unwrap();
 
@@ -440,8 +444,6 @@ fn movement(
     }
 
     snake_body.table.insert(get_grid_number(new_part_position));
-
-    // println!("snake body part: {:?}", snake_body.body);
 }
 
 fn generate_foot(mut commands: Commands, snake_body: Res<SnakeBody>, query: Query<&Foot>) {
